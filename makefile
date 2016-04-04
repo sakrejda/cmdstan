@@ -16,7 +16,7 @@ help:
 # - AR: archiver (must specify for cross-compiling)
 # - OS: {mac, win, linux}. 
 ##
-CC = g++
+CC = clang++
 O = 3
 O_STANC = 0
 AR = ar
@@ -31,9 +31,9 @@ MATH ?= $(STAN)lib/stan_math/
 ##
 # Set default compiler options.
 ## 
-CFLAGS = -DBOOST_RESULT_OF_USE_TR1 -DBOOST_NO_DECLTYPE -DBOOST_DISABLE_ASSERTS -I src -I $(STAN)src -isystem $(MATH) -isystem $(EIGEN) -isystem $(BOOST) -Wall -pipe -DEIGEN_NO_DEBUG -I$(CVODE)/include
+CFLAGS = -std=c++11 -DBOOST_RESULT_OF_USE_TR1 -DBOOST_NO_DECLTYPE -DBOOST_DISABLE_ASSERTS -I src -I $(STAN)src -isystem $(MATH) -isystem $(EIGEN) -isystem $(BOOST) -Wall -pipe -DEIGEN_NO_DEBUG -I$(CVODE)/include -I/usr/local/include 
 CFLAGS_GTEST = -DGTEST_USE_OWN_TR1_TUPLE
-LDLIBS = 
+LDLIBS = -L /usr/local/lib -lpqxx -lpq
 LDLIBS_STANC = -Lbin -lstanc
 EXE = 
 PATH_SEPARATOR = /

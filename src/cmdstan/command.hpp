@@ -113,8 +113,7 @@
 
 #include <stan/interface_callbacks/interrupt/noop.hpp>
 #include <stan/interface_callbacks/var_context_factory/dump_factory.hpp>
-#include <stan/interface_callbacks/writer/base_writer.hpp>
-#include <stan/interface_callbacks/writer/stream_writer.hpp>
+#include <stan/interface_callbacks/writer/psql_writer.hpp>
 
 #include <fstream>
 #include <iostream>
@@ -133,7 +132,6 @@ namespace stan {
 
     template <class Model>
     int command(int argc, const char* argv[]) {
-      stan::interface_callbacks::writer::stream_writer info(std::cout);
       stan::interface_callbacks::writer::stream_writer err(std::cout);
       
       std::vector<stan::services::argument*> valid_arguments;
@@ -144,7 +142,7 @@ namespace stan {
       valid_arguments.push_back(new stan::services::arg_output());
 
       stan::services::argument_parser parser(valid_arguments);
-      int err_code = parser.parse_args(argc, argv, info, err);
+      int err_code = parser.parse_args(argc, argv, err, err);
       if (err_code != 0) {
         std::cout << "Failed to parse arguments, terminating Stan" << std::endl;
         return err_code;
@@ -168,41 +166,28 @@ namespace stan {
       data_stream.close();
       
       // Sample output
-      std::string output_file = dynamic_cast<stan::services::string_argument*>(
-                                parser.arg("output")->arg("file"))->value();
-      std::fstream* output_stream = 0;
-      if (output_file != "") {
-        output_stream = new std::fstream(output_file.c_str(),
-                                         std::fstream::out);
-      } else {
-        output_stream = new null_fstream();
-      }
+      //
+      // Identification
+      unsigned int id = dynamic_cast<stan::services::int_argument*>
+        (parser.arg("id"))->value();
 
+      std::string output_uri = dynamic_cast<stan::services::string_argument*>(
+                                parser.arg("output")->arg("file"))->value();
+      stan::interface_callbacks::writer::psql_writer writer(output_uri, std::to_string(id));
       
       // Diagnostic output
       std::string diagnostic_file
         = dynamic_cast<stan::services::string_argument*>
           (parser.arg("output")->arg("diagnostic_file"))->value();
 
-      std::fstream* diagnostic_stream = 0;
-      if (diagnostic_file != "") {
-        diagnostic_stream = new std::fstream(diagnostic_file.c_str(),
-                                             std::fstream::out);
-      } else {
-        diagnostic_stream = new null_fstream();
-      }
+      if (diagnostic_file != "") 
+        err("This CmdStan fork has only one writer ('output file=<DB URI>')");
 
       // Refresh rate
       int refresh = dynamic_cast<stan::services::int_argument*>(
                     parser.arg("output")->arg("refresh"))->value();
       
-      // Identification
-      unsigned int id = dynamic_cast<stan::services::int_argument*>
-        (parser.arg("id"))->value();
 
-      stan::interface_callbacks::writer::stream_writer
-        sample_writer(*output_stream, "# "),
-        diagnostic_writer(*diagnostic_stream, "# ");
 
       //////////////////////////////////////////////////
       //            Random number generator           //
@@ -243,27 +228,18 @@ namespace stan {
 
       Eigen::VectorXd cont_params = Eigen::VectorXd::Zero(model.num_params_r());
 
-      parser.print(info);
-      info();
+      parser.print(err); err();
       
-      if (output_stream) {
-        io::write_stan(sample_writer);
-        io::write_model(sample_writer, model.model_name());
-        parser.print(sample_writer);
-      }
-
-      if (diagnostic_stream) {
-        io::write_stan(diagnostic_writer);
-        io::write_model(diagnostic_writer, model.model_name());
-        parser.print(diagnostic_writer);
-      }
+      io::write_stan(writer);
+      io::write_model(writer, model.model_name());
+      parser.print(writer);
 
       std::string init = dynamic_cast<stan::services::string_argument*>(
                          parser.arg("init"))->value();
 
       interface_callbacks::var_context_factory::dump_factory var_context_factory;
       if (!init::initialize_state<interface_callbacks::var_context_factory::dump_factory>
-          (init, cont_params, model, base_rng, info,
+          (init, cont_params, model, base_rng, err,
            var_context_factory))
         return stan::services::error_codes::SOFTWARE;
 
@@ -292,21 +268,7 @@ namespace stan {
           int num_failed
             = stan::model::test_gradients<true, true>
             (model, cont_vector, disc_vector,
-             epsilon, error, info);
-
-          if (output_stream) {
-            num_failed
-              = stan::model::test_gradients<true, true>
-              (model, cont_vector, disc_vector,
-               epsilon, error, sample_writer);
-          }
-
-          if (diagnostic_stream) {
-            num_failed
-              = stan::model::test_gradients<true, true>
-              (model, cont_vector, disc_vector,
-               epsilon, error, diagnostic_writer);
-          }
+             epsilon, error, err);
 
           (void) num_failed; // FIXME: do something with the number failed
 
@@ -335,17 +297,12 @@ namespace stan {
           = dynamic_cast<stan::services::bool_argument*>(parser.arg("method")
                                          ->arg("optimize")
                                          ->arg("save_iterations"))->value();
-        if (output_stream) {
-          std::vector<std::string> names;
-          names.push_back("lp__");
-          model.constrained_param_names(names, true, true);
 
-          (*output_stream) << names.at(0);
-          for (size_t i = 1; i < names.size(); ++i) {
-            (*output_stream) << "," << names.at(i);
-          }
-          (*output_stream) << std::endl;
-        }
+
+        std::vector<std::string> names;
+        names.push_back("lp__");
+        model.constrained_param_names(names, true, true);
+        writer(names);
 
         double lp(0);
         int return_code = stan::services::error_codes::CONFIG;
@@ -353,28 +310,27 @@ namespace stan {
           std::vector<double> gradient;
           try {
             lp = model.template log_prob<false, false>
-              (cont_vector, disc_vector, &std::cout);
+              (cont_vector, disc_vector, &std::cout);     // FIXME: writer.
           } catch (const std::exception& e) {
-            io::write_error_msg(info, e);
+            io::write_error_msg(err, e);
             lp = -std::numeric_limits<double>::infinity();
           }
 
-          std::cout << "initial log joint probability = " << lp << std::endl;
+          writer("initial log joint probability = " + std::to_string(lp));
           if (save_iterations) {
             io::write_iteration(model, base_rng,
                                 lp, cont_vector, disc_vector,
-                                info, sample_writer);
+                                err, writer);
           }
 
           double lastlp = lp * 1.1;
           int m = 0;
-          std::cout << "(lp - lastlp) / lp > 1e-8: "
-                    << ((lp - lastlp) / fabs(lp)) << std::endl;
+          writer("(lp - lastlp) / lp > 1e-8: " + std::to_string((lp - lastlp) / fabs(lp)));
           while ((lp - lastlp) / fabs(lp) > 1e-8) {
             lastlp = lp;
             lp = stan::optimization::newton_step
               (model, cont_vector, disc_vector);
-            std::cout << "Iteration ";
+            std::cout << "Iteration ";                         // FIXME: writer.
             std::cout << std::setw(2) << (m + 1) << ". ";
             std::cout << "Log joint probability = " << std::setw(10) << lp;
             std::cout << ". Improved by " << (lp - lastlp) << ".";
@@ -385,7 +341,7 @@ namespace stan {
             if (save_iterations) {
               io::write_iteration(model, base_rng,
                                   lp, cont_vector, disc_vector,
-                                  info, sample_writer);
+                                  err, writer);
             }
           }
           return_code = stan::services::error_codes::OK;
@@ -411,7 +367,7 @@ namespace stan {
 
           return_code = optimize::do_bfgs_optimize(model,bfgs, base_rng,
                                                    lp, cont_vector, disc_vector,
-                                                   sample_writer, info,
+                                                   writer, err,
                                                    save_iterations, refresh,
                                                    callback);
         } else if (algo->value() == "lbfgs") {
@@ -439,7 +395,7 @@ namespace stan {
 
           return_code = optimize::do_bfgs_optimize(model, bfgs, base_rng,
                                                    lp, cont_vector, disc_vector,
-                                                   sample_writer, info,
+                                                   writer, err,
                                                    save_iterations, refresh,
                                                    callback);
         } else {
@@ -448,11 +404,7 @@ namespace stan {
 
         io::write_iteration(model, base_rng,
                             lp, cont_vector, disc_vector,
-                            info, sample_writer);
-        output_stream->close();
-        diagnostic_stream->close();
-        delete output_stream;
-        delete diagnostic_stream;
+                            err, writer);
         return return_code;
       }
 
@@ -485,10 +437,10 @@ namespace stan {
         std::cout << std::endl;
 
         stan::services::sample::mcmc_writer<Model,
-                                            interface_callbacks::writer::stream_writer,
+                                            interface_callbacks::writer::psql_writer,
                                             interface_callbacks::writer::stream_writer,
                                             interface_callbacks::writer::stream_writer>
-          writer(sample_writer, diagnostic_writer, info);
+          mcmc_writer(writer, err, err);
 
         // Sampling parameters
         int num_warmup = dynamic_cast<stan::services::int_argument*>(
@@ -631,7 +583,7 @@ namespace stan {
                 return 0;
               if (!sample::init_adapt<sampler>(sampler_ptr,
                                                adapt, cont_params,
-                                               info))
+                                               err))
                 return 0;
               break;
             }
@@ -643,7 +595,7 @@ namespace stan {
                 return 0;
               if (!sample::init_adapt<sampler>(sampler_ptr,
                                                adapt, cont_params,
-                                               info))
+                                               err))
                 return 0;
               break;
             }
@@ -654,7 +606,7 @@ namespace stan {
               if (!sample::init_static_hmc<sampler>(sampler_ptr, algo))
                 return 0;
               if (!sample::init_windowed_adapt<sampler>(sampler_ptr, adapt, num_warmup,
-                                                        cont_params, info))
+                                                        cont_params, err))
                 return 0;
               break;
             }
@@ -665,7 +617,7 @@ namespace stan {
               if (!sample::init_nuts<sampler>(sampler_ptr, algo))
                 return 0;
               if (!sample::init_windowed_adapt<sampler>(sampler_ptr, adapt, num_warmup,
-                                                        cont_params, info))
+                                                        cont_params, err))
                 return 0;
               break;
             }
@@ -677,7 +629,7 @@ namespace stan {
               if (!sample::init_static_hmc<sampler>(sampler_ptr, algo))
                 return 0;
               if (!sample::init_windowed_adapt<sampler>(sampler_ptr, adapt, num_warmup,
-                                                        cont_params, info))
+                                                        cont_params, err))
                 return 0;
               break;
             }
@@ -688,7 +640,7 @@ namespace stan {
               if (!sample::init_nuts<sampler>(sampler_ptr, algo))
                 return 0;
               if (!sample::init_windowed_adapt<sampler>(sampler_ptr, adapt, num_warmup,
-                                                        cont_params, info))
+                                                        cont_params, err))
                 return 0;
               break;
             }
@@ -701,8 +653,8 @@ namespace stan {
         }
 
         // Headers
-        writer.write_sample_names(s, sampler_ptr, model);
-        writer.write_diagnostic_names(s, sampler_ptr, model);
+        mcmc_writer.write_sample_names(s, sampler_ptr, model);
+        mcmc_writer.write_diagnostic_names(s, sampler_ptr, model);
 
         std::string prefix = "";
         std::string suffix = "\n";
@@ -714,11 +666,11 @@ namespace stan {
 
         mcmc::warmup<Model, rng_t>(sampler_ptr, num_warmup, num_samples, num_thin,
                                    refresh, save_warmup,
-                                   writer,
+                                   mcmc_writer,
                                    s, model, base_rng,
                                    prefix, suffix, std::cout,
                                    startTransitionCallback,
-                                   info);
+                                   err);
 
         clock_t end = clock();
         warmDeltaT = static_cast<double>(end - start) / CLOCKS_PER_SEC;
@@ -726,7 +678,7 @@ namespace stan {
         if (adapt_engaged) {
           dynamic_cast<stan::mcmc::base_adapter*>(sampler_ptr)
             ->disengage_adaptation();
-          writer.write_adapt_finish(sampler_ptr);
+          mcmc_writer.write_adapt_finish(sampler_ptr);
         }
 
         // Sampling
@@ -735,16 +687,16 @@ namespace stan {
         mcmc::sample<Model, rng_t>
           (sampler_ptr, num_warmup, num_samples, num_thin,
            refresh, true,
-           writer,
+           mcmc_writer,
            s, model, base_rng,
            prefix, suffix, std::cout,
            startTransitionCallback,
-           info);
+           err);
 
         end = clock();
         sampleDeltaT = static_cast<double>(end - start) / CLOCKS_PER_SEC;
 
-        writer.write_timing(warmDeltaT, sampleDeltaT);
+        mcmc_writer.write_timing(warmDeltaT, sampleDeltaT);
 
         if (sampler_ptr)
           delete sampler_ptr;
@@ -833,7 +785,7 @@ namespace stan {
           names.push_back("lp__");
           model.constrained_param_names(names, true, true);
 
-          sample_writer(names);
+          writer(names);
 
           stan::variational::advi<Model,
                                   stan::variational::normal_fullrank,
@@ -847,14 +799,14 @@ namespace stan {
                      output_samples);
           cmd_advi.run(eta, adapt_engaged, adapt_iterations,
                        tol_rel_obj, max_iterations,
-                       info, sample_writer, diagnostic_writer);
+                       err, writer, writer);
         }
 
         if (algo->value() == "meanfield") {
           std::vector<std::string> names;
           names.push_back("lp__");
           model.constrained_param_names(names, true, true);
-          sample_writer(names);
+          writer(names);
           
           stan::variational::advi<Model,
                                   stan::variational::normal_meanfield,
@@ -868,19 +820,10 @@ namespace stan {
                      output_samples);
           cmd_advi.run(eta, adapt_engaged, adapt_iterations,
                        tol_rel_obj, max_iterations,
-                       info, sample_writer, diagnostic_writer);
+                       err, writer, writer);
         }
       }
 
-      if (output_stream) {
-        output_stream->close();
-        delete output_stream;
-      }
-
-      if (diagnostic_stream) {
-        diagnostic_stream->close();
-        delete diagnostic_stream;
-      }
 
       for (size_t i = 0; i < valid_arguments.size(); ++i)
         delete valid_arguments.at(i);
