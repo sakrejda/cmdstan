@@ -232,7 +232,7 @@ namespace stan {
         "key_value("
         "row_id SERIAL PRIMARY KEY,"
         "hash INT REFERENCES runs,"
-        "key VARCHAR(50),"
+        "key VARCHAR(300),"
         "idx INTEGER,"
         "row_idx INTEGER,"
         "col_idx INTEGER,"

@@ -144,7 +144,7 @@ namespace stan {
       stan::services::argument_parser parser(valid_arguments);
       int err_code = parser.parse_args(argc, argv, err, err);
       if (err_code != 0) {
-        std::cout << "Failed to parse arguments, terminating Stan" << std::endl;
+        err("Failed to parse arguments, terminating Stan");
         return err_code;
       }
 
@@ -166,8 +166,6 @@ namespace stan {
       data_stream.close();
       
       // Sample output
-      //
-      // Identification
       unsigned int id = dynamic_cast<stan::services::int_argument*>
         (parser.arg("id"))->value();
 
@@ -175,13 +173,6 @@ namespace stan {
                                 parser.arg("output")->arg("file"))->value();
       stan::interface_callbacks::writer::psql_writer writer(output_uri, std::to_string(id));
       
-      // Diagnostic output
-      std::string diagnostic_file
-        = dynamic_cast<stan::services::string_argument*>
-          (parser.arg("output")->arg("diagnostic_file"))->value();
-
-      if (diagnostic_file != "") 
-        err("This CmdStan fork has only one writer ('output file=<DB URI>')");
 
       // Refresh rate
       int refresh = dynamic_cast<stan::services::int_argument*>(
@@ -228,8 +219,7 @@ namespace stan {
 
       Eigen::VectorXd cont_params = Eigen::VectorXd::Zero(model.num_params_r());
 
-      parser.print(err); err();
-      
+      parser.print(writer); 
       io::write_stan(writer);
       io::write_model(writer, model.model_name());
       parser.print(writer);
@@ -257,7 +247,7 @@ namespace stan {
                               (parser.arg("method")->arg("diagnose")->arg("test"));
 
         if (test->value() == "gradient") {
-          std::cout << std::endl << "TEST GRADIENT MODE" << std::endl;
+          err("TEST GRADIENT MODE");
 
           double epsilon = dynamic_cast<stan::services::real_argument*>
                            (test->arg("gradient")->arg("epsilon"))->value();
@@ -268,7 +258,7 @@ namespace stan {
           int num_failed
             = stan::model::test_gradients<true, true>
             (model, cont_vector, disc_vector,
-             epsilon, error, err);
+             epsilon, error, writer);
 
           (void) num_failed; // FIXME: do something with the number failed
 
@@ -330,12 +320,9 @@ namespace stan {
             lastlp = lp;
             lp = stan::optimization::newton_step
               (model, cont_vector, disc_vector);
-            std::cout << "Iteration ";                         // FIXME: writer.
-            std::cout << std::setw(2) << (m + 1) << ". ";
-            std::cout << "Log joint probability = " << std::setw(10) << lp;
-            std::cout << ". Improved by " << (lp - lastlp) << ".";
-            std::cout << std::endl;
-            std::cout.flush();
+            writer("iteration", (m + 1));
+            writer("Log joint probability", lp);
+            writer("Log joint probability Improved by", (lp - lastlp));
             m++;
 
             if (save_iterations) {
@@ -426,21 +413,14 @@ namespace stan {
         double deltaT
           = static_cast<double>(end_check - start_check) / CLOCKS_PER_SEC;
 
-        std::cout << std::endl;
-        std::cout << "Gradient evaluation took " << deltaT
-                  << " seconds" << std::endl;
-        std::cout << "1000 transitions using 10 leapfrog steps "
-                  << "per transition would take "
-                  << 1e4 * deltaT << " seconds." << std::endl;
-        std::cout << "Adjust your expectations accordingly!"
-                  << std::endl << std::endl;
-        std::cout << std::endl;
+        writer("Gradient evaluation rate (seconds/1000)", deltaT);
+        writer("1000 transitions using 10 leapfrog steps per transition (s)", 1e4 * deltaT);
 
         stan::services::sample::mcmc_writer<Model,
                                             interface_callbacks::writer::psql_writer,
                                             interface_callbacks::writer::stream_writer,
-                                            interface_callbacks::writer::stream_writer>
-          mcmc_writer(writer, err, err);
+                                            interface_callbacks::writer::psql_writer>
+          mcmc_writer(writer, err, writer);
 
         // Sampling parameters
         int num_warmup = dynamic_cast<stan::services::int_argument*>(
@@ -475,10 +455,8 @@ namespace stan {
             ->value();
 
         if (model.num_params_r() == 0 && algo->value() != "fixed_param") {
-          std::cout
-            << "Must use algorithm=fixed_param for "
-            << "model that has no parameters."
-            << std::endl;
+          writer("Must use algorithm=fixed_param for "
+                 "model that has no parameters.");
           return -1;
         }
 
@@ -488,14 +466,13 @@ namespace stan {
           adapt_engaged = false;
 
           if (num_warmup != 0) {
-            std::cout << "Warning: warmup will be skipped "
-                      << "for the fixed parameter sampler!"
-                      << std::endl;
+            writer("Warning: warmup will be skipped "
+                   "for the fixed parameter sampler!");
             num_warmup = 0;
           }
 
         } else if (algo->value() == "rwm") {
-          std::cout << algo->arg("rwm")->description() << std::endl;
+          writer(algo->arg("rwm")->description());
           return 0;
 
         } else if (algo->value() == "hmc") {
@@ -646,8 +623,7 @@ namespace stan {
             }
 
             default:
-              std::cout << "No sampler matching HMC specification!"
-                        << std::endl;
+              err("No sampler matching HMC specification!");
               return 0;
           }
         }
@@ -662,7 +638,6 @@ namespace stan {
 
         // Warm-Up
         clock_t start = clock();
-
 
         mcmc::warmup<Model, rng_t>(sampler_ptr, num_warmup, num_samples, num_thin,
                                    refresh, save_warmup,
@@ -762,23 +737,12 @@ namespace stan {
         double deltaT
           = static_cast<double>(end_check - start_check) / CLOCKS_PER_SEC;
 
-        std::cout << std::endl;
-        std::cout << "This is Automatic Differentiation Variational Inference.";
-        std::cout << std::endl;
-
-        std::cout << std::endl;
-        std::cout << "(EXPERIMENTAL ALGORITHM: expect frequent updates to the"
-                  << " procedure.)";
-        std::cout << std::endl;
-
-        std::cout << std::endl;
-        std::cout << "Gradient evaluation took " << deltaT
-                  << " seconds" << std::endl;
-        std::cout << "1000 iterations under these settings should take "
-                  << 1e3 * grad_samples * deltaT << " seconds." << std::endl;
-        std::cout << "Adjust your expectations accordingly!";
-        std::cout << std::endl;
-        std::cout << std::endl;
+        writer("This is Automatic Differentiation Variational Inference.");
+        writer("EXPERIMENTAL ALGORITHM: expect frequent updates to the "
+               "procedure.");
+        writer("Gradient evaluation time (s)", deltaT);
+        writer("Timing under these settings (s/1000 iterations)", 
+          1e3 * grad_samples * deltaT);
 
         if (algo->value() == "fullrank") {
           std::vector<std::string> names;
