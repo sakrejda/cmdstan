@@ -78,14 +78,17 @@ namespace stan {
 
         /**
          * Copy constructor.  Not a regular deep copy.  We keep the same
-         * hash/id.  We create a new main connection, we create new
+         * hash, unless it is modified.  We create a new main connection, we create new
          * thread which launch their own connections.  If multiple
          * copies are used to write iterations the iteration number will
          * be inconsistent (each instance counts separately!).
          **/
-        psql_writer(const psql_writer& other) :
+        psql_writer(const psql_writer& other, std::string hash = "") :
             uri__(other.uri__), id__(other.id__), iteration__(0), 
             finished__(false), hash__(other.hash__) {
+          
+          if (hash != "") 
+            hash__ = hash;
 
           conn__ = new pqxx::connection(uri__);
           conn__->perform(do_sql(create_runs_sql));

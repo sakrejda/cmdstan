@@ -171,8 +171,9 @@ namespace stan {
 
       std::string output_uri = dynamic_cast<stan::services::string_argument*>(
                                 parser.arg("output")->arg("file"))->value();
-      stan::interface_callbacks::writer::psql_writer writer(output_uri, std::to_string(id));
-      
+      stan::interface_callbacks::writer::psql_writer writer(output_uri, "constrained");
+      stan::interface_callbacks::writer::psql_writer unconstrained_writer(output_uri, "unconstrained");
+
 
       // Refresh rate
       int refresh = dynamic_cast<stan::services::int_argument*>(
@@ -418,9 +419,9 @@ namespace stan {
 
         stan::services::sample::mcmc_writer<Model,
                                             interface_callbacks::writer::psql_writer,
-                                            interface_callbacks::writer::stream_writer,
+                                            interface_callbacks::writer::psql_writer,
                                             interface_callbacks::writer::psql_writer>
-          mcmc_writer(writer, err, writer);
+          mcmc_writer(writer, unconstrained_writer, writer);
 
         // Sampling parameters
         int num_warmup = dynamic_cast<stan::services::int_argument*>(
@@ -763,7 +764,7 @@ namespace stan {
                      output_samples);
           cmd_advi.run(eta, adapt_engaged, adapt_iterations,
                        tol_rel_obj, max_iterations,
-                       err, writer, writer);
+                       writer, writer, unconstrained_writer);
         }
 
         if (algo->value() == "meanfield") {
@@ -784,7 +785,7 @@ namespace stan {
                      output_samples);
           cmd_advi.run(eta, adapt_engaged, adapt_iterations,
                        tol_rel_obj, max_iterations,
-                       err, writer, writer);
+                       writer, writer, unconstrained_writer);
         }
       }
 
