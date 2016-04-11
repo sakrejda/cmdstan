@@ -233,7 +233,6 @@ namespace stan {
       ");";
       const std::string psql_writer::create_key_value_sql = "CREATE TABLE IF NOT EXISTS "
         "key_value("
-        "row_id SERIAL PRIMARY KEY,"
         "hash INT REFERENCES runs,"
         "key VARCHAR(300),"
         "idx INTEGER,"
@@ -245,21 +244,18 @@ namespace stan {
       ");";
       const std::string psql_writer::create_parameter_names_sql = "CREATE TABLE IF NOT EXISTS "
         "parameter_names("
-        "row_id BIGSERIAL PRIMARY KEY,"
         "hash INT REFERENCES runs,"
         "name VARCHAR(200)"
       ");";
       const std::string psql_writer::create_parameter_samples_sql = "CREATE TABLE IF NOT EXISTS "
         "parameter_samples("
-        "row_id BIGSERIAL PRIMARY KEY, " 
-        "hash INT REFERENCES runs, "
+        "hash INT, "
         "iteration INTEGER, "
         "name VARCHAR(200), "
         "value DOUBLE PRECISION"
       ");";
       const std::string psql_writer::create_messages_sql = "CREATE TABLE IF NOT EXISTS "
         "messages("
-        "row_id BIGSERIAL PRIMARY KEY,"
         "hash INT REFERENCES runs,"
         "message VARCHAR(200)"
       ");";
