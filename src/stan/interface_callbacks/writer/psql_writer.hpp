@@ -70,10 +70,6 @@ namespace stan {
           conn__->prepare("write_parameter_sample", write_parameter_sample_sql);
           conn__->prepare("write_message", write_message_sql);
           
-          int n_threads = 2;
-          for (unsigned int i=0; i < n_threads; ++i) {
-            write_threads__.emplace_back(std::thread(&psql_writer::consume_samples, this));
-          }
         }
 
         /**
@@ -102,10 +98,6 @@ namespace stan {
           conn__->prepare("write_parameter_sample", write_parameter_sample_sql);
           conn__->prepare("write_message", write_message_sql);
           
-          int n_threads = 2;
-          for (unsigned int i=0; i < n_threads; ++i) {
-            write_threads__.emplace_back(std::thread(&psql_writer::consume_samples, this));
-          }
         }
 
         /**
@@ -120,7 +112,7 @@ namespace stan {
 
         ~psql_writer() {
           while(1) { 
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             mutex_samples__.lock();
             if (samples__.size() == 0) {
               mutex_samples__.unlock();
@@ -164,6 +156,25 @@ namespace stan {
 
         void operator()(const std::vector<std::string>& names) {
           names__ = names;
+
+          big_prepared_sql__ = write_parameter_sample_sql_stub;
+          int offset;
+          for (unsigned int i = 0; i < names__.size(); ++i) {
+            offset = i*4;
+            big_prepared_sql__ += "($" + (offset+1) + "," +
+                                  " $" + (offset+2) + "," +
+                                  " $" + (offset+3) + "," +
+                                  " $" + (offset+4) + ") ";
+            if (i < names__.size() - 1)
+              big_prepared_sql__ += ", ";
+            else
+              big_prepared_sql__ += ";";
+          }
+          conn__->prepare("write_parameter_iteration", big_prepared_sql__);
+          for (unsigned int i=0; i < n_threads__; ++i) {
+            write_threads__.emplace_back(std::thread(&psql_writer::consume_samples, this));
+          }
+
           conn__->perform(write_parameter_names(hash__, names));
         }
 
@@ -185,6 +196,7 @@ namespace stan {
         std::string uri__;
         std::string hash__;
         std::string id__;
+        std::string big_prepared_sql__;
         int iteration__;
 
         std::vector<std::thread> write_threads__;
@@ -196,7 +208,7 @@ namespace stan {
           int iteration;
           std::vector<double> state;
           pqxx::connection* conn = new pqxx::connection(uri__);
-          conn->prepare("write_parameter_sample", write_parameter_sample_sql);
+          conn->prepare("write_parameter_iteration", big_prepared_sql__);
           while(!finished__) {
             mutex_samples__.lock();
             if (samples__.size() > 0) {
@@ -276,6 +288,10 @@ namespace stan {
         "(hash, iteration, name, value)"
         " VALUES "
         "($1, $2, $3, $4);";
+      const std::string psql_writer::write_parameter_sample_sql_stub = "INSERT"
+        "INTO parameter_samples "
+        "(hash, iteration, name, value)"
+        " VALUES ";
       const std::string psql_writer::write_message_sql = "INSERT INTO messages "
         "(hash, message)"
         " VALUES "
