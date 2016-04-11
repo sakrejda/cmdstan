@@ -51,7 +51,8 @@ namespace stan {
          *   runs table.  Not used as an index internally. 
          */
         psql_writer(const std::string& uri = "", const std::string id = ""):
-            uri__(uri), id__(id), iteration__(0), finished__(false) {
+            uri__(uri), id__(id), iteration__(0), n_threads__(2), 
+            finished__(false) {
 
           conn__ = new pqxx::connection(uri);
           conn__->perform(do_sql(create_runs_sql));
@@ -81,7 +82,7 @@ namespace stan {
          **/
         psql_writer(const psql_writer& other, std::string hash = "") :
             uri__(other.uri__), id__(other.id__), iteration__(0), 
-            finished__(false), hash__(other.hash__) {
+            hash__(other.hash__), finished__(false) {
           
           if (hash != "") 
             hash__ = hash;
@@ -161,10 +162,10 @@ namespace stan {
           int offset;
           for (unsigned int i = 0; i < names__.size(); ++i) {
             offset = i*4;
-            big_prepared_sql__ += "($" + (offset+1) + "," +
-                                  " $" + (offset+2) + "," +
-                                  " $" + (offset+3) + "," +
-                                  " $" + (offset+4) + ") ";
+            big_prepared_sql__ += "($" + std::to_string(offset+1) + "," +
+                                  " $" + std::to_string(offset+2) + "," +
+                                  " $" + std::to_string(offset+3) + "," +
+                                  " $" + std::to_string(offset+4) + ") ";
             if (i < names__.size() - 1)
               big_prepared_sql__ += ", ";
             else
@@ -198,6 +199,7 @@ namespace stan {
         std::string id__;
         std::string big_prepared_sql__;
         int iteration__;
+        int n_threads__;
 
         std::vector<std::thread> write_threads__;
         std::mutex mutex_samples__;
@@ -234,6 +236,7 @@ namespace stan {
         static const std::string write_key_value_sql;
         static const std::string write_parameter_name_sql;
         static const std::string write_parameter_sample_sql;
+        static const std::string write_parameter_sample_sql_stub;
         static const std::string write_message_sql;
       };
 
@@ -288,7 +291,7 @@ namespace stan {
         "(hash, iteration, name, value)"
         " VALUES "
         "($1, $2, $3, $4);";
-      const std::string psql_writer::write_parameter_sample_sql_stub = "INSERT"
+      const std::string psql_writer::write_parameter_sample_sql_stub = "INSERT "
         "INTO parameter_samples "
         "(hash, iteration, name, value)"
         " VALUES ";
