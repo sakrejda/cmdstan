@@ -11,7 +11,18 @@
 * a supporting fully-templated matrix, linear algebra, and probability special function library.
 
 This *FORK* is modified to write (almost) all output to a postgres
-database using the libpq/libpqxx libraries.  
+database using the libpq/libpqxx libraries.  At the moment performance
+is barely adequate for some uses and highly dependent on how many
+parameter are in play and the configuration of the postgres backend
+(even when writing locally with no network delays).  Roughly I've seen
+performance between 500 and 2500 rows per second on the parameter output
+write with a row being a single parameter at a single iteration.  The
+target is to make write speeds adequate for medium/large models (up to
+hundreds of thousands of parameters) which are challenging for Stan
+so run times around 8 hours.  For very simple models Stan can bury
+the backend and while there is no data loss (assuming there is enough
+RAM for the work queue) it might take a long time to write the output
+to the database.  
 
 ### Home Page
 Stan's home page, with links to everything you'll need to use Stan is:

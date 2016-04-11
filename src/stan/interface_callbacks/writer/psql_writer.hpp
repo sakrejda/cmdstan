@@ -51,7 +51,7 @@ namespace stan {
          *   runs table.  Not used as an index internally. 
          */
         psql_writer(const std::string& uri = "", const std::string id = ""):
-            uri__(uri), id__(id), iteration__(0), n_threads__(2), 
+            uri__(uri), id__(id), iteration__(0), n_threads__(1), 
             finished__(false) {
 
           conn__ = new pqxx::connection(uri);
@@ -244,7 +244,7 @@ namespace stan {
         "runs("
         "hash SERIAL PRIMARY KEY,"
         "timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-        "id VARCHAR(200) NOT NULL"
+        "id TEXT NOT NULL"
       ");";
       const std::string psql_writer::create_key_value_sql = "CREATE TABLE IF NOT EXISTS "
         "key_value("
@@ -260,19 +260,19 @@ namespace stan {
       const std::string psql_writer::create_parameter_names_sql = "CREATE TABLE IF NOT EXISTS "
         "parameter_names("
         "hash INT REFERENCES runs,"
-        "name VARCHAR(200)"
+        "name VARCHAR(300)"
       ");";
-      const std::string psql_writer::create_parameter_samples_sql = "CREATE TABLE IF NOT EXISTS "
+      const std::string psql_writer::create_parameter_samples_sql = "CREATE UNLOGGED TABLE IF NOT EXISTS "
         "parameter_samples("
-        "hash INT, "
+        "hash INTEGER, "
         "iteration INTEGER, "
-        "name VARCHAR(200), "
+        "name VARCHAR(301), "
         "value DOUBLE PRECISION"
       ");";
       const std::string psql_writer::create_messages_sql = "CREATE TABLE IF NOT EXISTS "
         "messages("
-        "hash INT REFERENCES runs,"
-        "message VARCHAR(200)"
+        "hash INTEGER REFERENCES runs,"
+        "message TEXT"
       ");";
 
       const std::string psql_writer::write_key_value_sql = "INSERT INTO key_value "
