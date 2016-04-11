@@ -159,9 +159,11 @@ namespace stan {
         { 
           if (values__.size() != names__.size())
             throw std::range_error("Number of parameter names and values do not match.");
+          auto P = T.prepared("write_parameter_iteration");
           for (unsigned int i = 0; i < values__.size(); ++i) {
-            T.prepared("write_parameter_sample")(hash__)(iteration__)(names__[i])(values__[i]).exec();
+            P(hash__)(iteration__)(names__[i])(values__[i]);
           }
+          P.exec();
         }
        };
 
