@@ -83,7 +83,9 @@ namespace stan {
         psql_writer(const psql_writer& other, std::string hash = "") :
             uri__(other.uri__), id__(other.id__), iteration__(0), 
             hash__(other.hash__), finished__(false) {
-          
+         
+          start__ = std::chrono::system_clock::now();
+ 
           if (hash != "") 
             hash__ = hash;
 
@@ -126,8 +128,14 @@ namespace stan {
           for (unsigned int i=0; i < write_threads__.size(); ++i) {
             write_threads__[i].join();
           }
+
+          end__ = std::chrono::system_clock::now();
+          auto e = std::chrono::duration_cast<std::chrono::milliseconds>(end__ - start__);
+          (*this)("elapsed time", static_cast<int>(e.count()));
+
           conn__->disconnect();
           delete conn__;
+
         }
 
         void operator()(const std::string& key, double value) {
@@ -158,20 +166,41 @@ namespace stan {
         void operator()(const std::vector<std::string>& names) {
           names__ = names;
 
-          big_prepared_sql__ = write_parameter_sample_sql_stub;
-          int offset;
-          for (unsigned int i = 0; i < names__.size(); ++i) {
-            offset = i*4;
-            big_prepared_sql__ += "($" + std::to_string(offset+1) + "," +
-                                  " $" + std::to_string(offset+2) + "," +
-                                  " $" + std::to_string(offset+3) + "," +
-                                  " $" + std::to_string(offset+4) + ") ";
-            if (i < names__.size() - 1)
-              big_prepared_sql__ += ", ";
-            else
-              big_prepared_sql__ += ";";
+          if (names__.size() >= prepared_statement_batch_size) {
+            big_prepared_sql__ = write_parameter_sample_sql_stub;
+            long offset;
+            for (unsigned long i = 0; i < prepared_statement_batch_size; ++i) {
+              offset = i*4;
+              big_prepared_sql__ += "($" + std::to_string(offset+1) + "," +
+                                    " $" + std::to_string(offset+2) + "," +
+                                    " $" + std::to_string(offset+3) + "," +
+                                    " $" + std::to_string(offset+4) + ") ";
+              if (i < names__.size() - 1)
+                big_prepared_sql__ += ", ";
+              else
+                big_prepared_sql__ += ";";
+            }
+            conn__->prepare("write_parameter_iteration_batch", big_prepared_sql__);
           }
-          conn__->prepare("write_parameter_iteration", big_prepared_sql__);
+
+          long p = names__.size() % prepared_statement_batch_size;
+          if (p != 0) {
+            small_prepared_sql__ = write_parameter_sample_sql_stub;
+            long offset;
+            for (unsigned long i = 0; i < p; ++i) {
+              offset = i*4;
+              small_prepared_sql__ += "($" + std::to_string(offset+1) + "," +
+                                    " $" + std::to_string(offset+2) + "," +
+                                    " $" + std::to_string(offset+3) + "," +
+                                    " $" + std::to_string(offset+4) + ") ";
+              if (i < names__.size() - 1)
+                small_prepared_sql__ += ", ";
+              else
+                small_prepared_sql__ += ";";
+            }
+            conn__->prepare("write_parameter_iteration_final", small_prepared_sql__);
+          }
+
           for (unsigned int i=0; i < n_threads__; ++i) {
             write_threads__.emplace_back(std::thread(&psql_writer::consume_samples, this));
           }
@@ -192,12 +221,14 @@ namespace stan {
         }
 
       private:
+        std::chrono::time_point<std::chrono::system_clock> start__, end__;
         pqxx::connection* conn__;
         std::vector<std::string> names__;
         std::string uri__;
         std::string hash__;
         std::string id__;
         std::string big_prepared_sql__;
+        std::string small_prepared_sql__;
         int iteration__;
         int n_threads__;
 
@@ -210,7 +241,8 @@ namespace stan {
           int iteration;
           std::vector<double> state;
           pqxx::connection* conn = new pqxx::connection(uri__);
-          conn->prepare("write_parameter_iteration", big_prepared_sql__);
+          conn->prepare("write_parameter_iteration_batch", big_prepared_sql__);
+          conn->prepare("write_parameter_iteration_final", small_prepared_sql__);
           while(!finished__) {
             mutex_samples__.lock();
             if (samples__.size() > 0) {
@@ -219,7 +251,8 @@ namespace stan {
               ++iteration__;
               iteration = iteration__;
               mutex_samples__.unlock(); 
-              conn->perform(write_parameter_samples(hash__, iteration, names__, state));
+              conn->perform(write_parameter_samples(hash__, iteration, names__, 
+                    state, prepared_statement_batch_size));
             } else {
               mutex_samples__.unlock();
             }
@@ -238,7 +271,11 @@ namespace stan {
         static const std::string write_parameter_sample_sql;
         static const std::string write_parameter_sample_sql_stub;
         static const std::string write_message_sql;
+
+        static const long prepared_statement_batch_size;
       };
+
+      const long psql_writer::prepared_statement_batch_size = 10000;
 
       const std::string psql_writer::create_runs_sql = "CREATE TABLE IF NOT EXISTS "
         "runs("
