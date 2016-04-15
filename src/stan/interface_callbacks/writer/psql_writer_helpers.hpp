@@ -169,7 +169,7 @@ namespace stan {
 
           for ( int i = 0; i < n_batches; ++i ) {
             auto P = T.prepared("write_parameter_iteration_batch");
-            for (unsigned long long j = 0; j < batch_size__; ++j) {
+            for ( long long j = 0; j < batch_size__; ++j) {
               P(hash__)(iteration__)(names__[i*batch_size__+j])(values__[i*batch_size__+j]);
             }
             P.exec();

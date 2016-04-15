@@ -175,7 +175,7 @@ namespace stan {
                                     " $" + std::to_string(offset+2) + "," +
                                     " $" + std::to_string(offset+3) + "," +
                                     " $" + std::to_string(offset+4) + ") ";
-              if (i < names__.size() - 1)
+              if (i < prepared_statement_batch_size - 1)
                 big_prepared_sql__ += ", ";
               else
                 big_prepared_sql__ += ";";
@@ -190,10 +190,10 @@ namespace stan {
             for (unsigned long i = 0; i < p; ++i) {
               offset = i*4;
               small_prepared_sql__ += "($" + std::to_string(offset+1) + "," +
-                                    " $" + std::to_string(offset+2) + "," +
-                                    " $" + std::to_string(offset+3) + "," +
-                                    " $" + std::to_string(offset+4) + ") ";
-              if (i < names__.size() - 1)
+                                      " $" + std::to_string(offset+2) + "," +
+                                      " $" + std::to_string(offset+3) + "," +
+                                      " $" + std::to_string(offset+4) + ") ";
+              if (i < p - 1)
                 small_prepared_sql__ += ", ";
               else
                 small_prepared_sql__ += ";";
@@ -299,7 +299,7 @@ namespace stan {
         "hash INT REFERENCES runs,"
         "name VARCHAR(300)"
       ");";
-      const std::string psql_writer::create_parameter_samples_sql = "CREATE UNLOGGED TABLE IF NOT EXISTS "
+      const std::string psql_writer::create_parameter_samples_sql = "CREATE TABLE IF NOT EXISTS "
         "parameter_samples("
         "hash INTEGER, "
         "iteration INTEGER, "
