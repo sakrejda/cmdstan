@@ -1,0 +1,11 @@
+g++ -arch x86_64 -ftemplate-depth-256 -dynamiclib \
+  -Wl,-headerpad_max_install_names  \
+  -undefined dynamic_lookup  \
+  -single_module  \
+  -multiply_defined suppress  \
+  -L/usr/local/lib  \
+  -o examples/bernoulli/libbernoulli.so  \
+  examples/bernoulli/bernoulli.hpp.gch  \
+  -Wl,-framework -Wl,CoreFoundation    
+
+

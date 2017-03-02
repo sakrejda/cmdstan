@@ -1,0 +1,21 @@
+/usr/local/bin/g++-6 -std=c++11 \
+  -Wall -DEIGEN_NO_DEBUG  -DBOOST_RESULT_OF_USE_TR1 -DBOOST_NO_DECLTYPE -DBOOST_DISABLE_ASSERTS    \
+  -DFUSION_MAX_VECTOR_SIZE=12 -DNO_FPRINTF_OUTPUT -pipe  -Wno-unused-function -ftemplate-depth=256       \
+  -v -O3 -shared   \
+    -Isrc \
+    -Istan/src \
+    -Istan/lib/stan_math \
+    -Istan/lib/stan_math/lib/eigen_3.2.8 \
+    -Istan/lib/stan_math/lib/boost_1.60.0  \
+    -Istan/lib/stan_math/lib/boost_1.60.0/boost/compatibility/cpp_c_headers \
+    -Istan/lib/stan_math/lib/cvodes_2.8.2/include    \
+    -I/usr/local/include \
+    -x c++ \
+    examples/bernoulli/bernoulli.hpp    \
+    -include src/cmdstan/command.hpp   \
+    -include boost/exception/diagnostic_information.hpp \
+    -include boost/exception_ptr.hpp \
+    -x none \
+    stan/lib/stan_math/lib/cvodes_2.8.2/lib/libsundials_nvecserial.a    \
+    stan/lib/stan_math/lib/cvodes_2.8.2/lib/libsundials_cvodes.a    
+
