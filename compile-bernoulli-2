@@ -1,6 +1,6 @@
 g++ -arch x86_64 -ftemplate-depth-256 \
   -Istan/lib/stan_math/lib/boost_1.60.0  \
-  -Istan/lib/stan_math/lib/eigen_3.2.8 \
+  -Istan/lib/stan_math/lib/eigen_3.2.9 \
   -Istan/lib/stan_math/lib/cvodes_2.8.2/include \
   -Istan/src \
   -Istan/lib/stan_math  \

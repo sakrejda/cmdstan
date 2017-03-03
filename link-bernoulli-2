@@ -5,7 +5,7 @@ g++ -arch x86_64 -ftemplate-depth-256 -dynamiclib \
   -multiply_defined suppress  \
   -L/usr/local/lib  \
   -o examples/bernoulli/libbernoulli.so  \
-  examples/bernoulli/bernoulli.hpp.gch  \
+  examples/bernoulli/bernoulli.hpp  \
   -Wl,-framework -Wl,CoreFoundation    
 
 

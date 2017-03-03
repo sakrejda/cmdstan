@@ -1,0 +1,2 @@
+
+libtool -dynamic -o libbernoulli_dynamic.dylib -framework CoreFoundation -lSystem examples/bernoulli/bernoulli.o
